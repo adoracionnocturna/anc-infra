@@ -30,6 +30,8 @@ concurrency:
 env:
   TF_STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
   TF_VAR_aws_account_id: ${{ secrets.AWS_ACCOUNT_ID }}
+  TF_VAR_youform_participant_feedback_form_id: ${{ vars.YOUFORM_PARTICIPANT_FEEDBACK_FORM_ID }}
+  TF_VAR_youform_leader_self_assessment_form_id: ${{ vars.YOUFORM_LEADER_SELF_ASSESSMENT_FORM_ID }}
   TF_IN_AUTOMATION: "true"
 
 jobs:
@@ -49,6 +51,19 @@ jobs:
             echo "This workflow must run from main because the IAM trust policy only allows refs/heads/main."
             exit 1
           fi
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Run service tests
+        working-directory: .
+        run: |
+          for tests in services/*/tests; do
+            echo "Testing ${tests}"
+            python -m unittest discover -s "${tests}"
+          done
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.1.0

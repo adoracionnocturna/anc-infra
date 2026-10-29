@@ -20,7 +20,9 @@ The AWS account is shared with other projects. Every ANC resource uses the `anc-
 ## Layout
 
 - `bootstrap/iam/`: GitHub Actions OIDC deploy role, created manually. See [bootstrap/iam/README.md](bootstrap/iam/README.md).
-- `infra/prod/`: Terraform root module for `prod`.
+- `infra/prod/`: Terraform root module for `prod` (one file per service).
+- `infra/modules/`: building blocks (`lambda-function`, `http-api`, `s3-private-bucket`).
+- `services/`: Lambda source code and tests.
 - `infra/scripts/bootstrap-state-bucket.sh`: ensures the remote state bucket exists before `terraform init`.
 - `.github/workflows/terraform-plan-apply.yml`: automatic plan/apply on push to `main`; manual `plan` or `apply` via `workflow_dispatch`.
 
@@ -31,3 +33,12 @@ The AWS account is shared with other projects. Every ANC resource uses the `anc-
 | `AWS_ACCOUNT_ID` | Target AWS account ID |
 | `AWS_DEPLOY_ROLE_ARN` | ARN of the OIDC deploy role |
 | `TF_STATE_BUCKET` | S3 bucket holding the Terraform state |
+
+## Required GitHub variables
+
+Variables are not masked in Actions logs; use them only for values that are already public.
+
+| Variable | Description |
+| --- | --- |
+| `YOUFORM_PARTICIPANT_FEEDBACK_FORM_ID` | YouForm form ID, participant feedback |
+| `YOUFORM_LEADER_SELF_ASSESSMENT_FORM_ID` | YouForm form ID, leader self-assessment |

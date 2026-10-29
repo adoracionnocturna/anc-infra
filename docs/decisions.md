@@ -4,6 +4,20 @@ Short, dated records of decisions that shape this repository. Newest first. Each
 
 ---
 
+## 2026-10-29 — youform-intake design
+
+**Context.** Two YouForm forms must be received: participant feedback (needs queryable data) and leader self-assessment (must only reach S3). Many more forms are expected.
+
+**Decision.**
+- One webhook, one Lambda, one bucket and one table shared by all forms; per-form behavior is configuration (`store_in_dynamodb`).
+- Authentication with YouForm's webhook signing secrets (HMAC-SHA256 of the raw body), one per form, stored in Secrets Manager. The secret value is set outside Terraform so it never reaches the state.
+- Every submission is stored raw in S3 (default SSE-S3 encryption, no KMS). Only flagged forms are normalized into DynamoDB; IAM enforces it with `dynamodb:LeadingKeys`.
+- Form IDs come from GitHub variables (not committed) and are marked `sensitive` in Terraform. They are not masked in Actions logs; accepted because they are already public in the form links and the webhook requires a signature. The webhook URL is a sensitive output.
+- Answers are keyed by YouForm field ID, not question text.
+- Lambda code depends only on stdlib + `boto3`; packaged with `archive_file`.
+
+**Consequences.** Adding a form needs a GitHub variable, a Terraform variable and a config entry, but no new infrastructure. Submissions are not deleted from YouForm by this service.
+
 ## 2026-10-29 — Terraform organization: building blocks + one file per service
 
 **Context.** Many services and features are expected over time. A previous project used one module per service, which led to long chains of pass-through variables and a large root module.

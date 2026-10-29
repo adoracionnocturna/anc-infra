@@ -58,3 +58,9 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+# Lambda packages built by Terraform
+.build/
+
+# Lambda packages built by Terraform
+.build/

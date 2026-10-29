@@ -20,8 +20,8 @@ anc-infra/
 │   └── scripts/              # Bootstrap helpers used by CI
 ├── services/                 # Lambda source code, one folder per function
 │   └── <function_name>/
-│       ├── handler.py
-│       └── tests/
+│       ├── src/handler.py    # Only src/ is packaged
+│       └── tests/test_*.py   # unittest, no AWS needed
 └── docs/                     # This guide, decision log, service catalog
 ```
 
@@ -59,13 +59,13 @@ A single resource (e.g. one DynamoDB table) goes straight into the service file.
 - **Service**: a business capability with its own entry point and data. Gets its own `infra/prod/<service>.tf`, its own code under `services/`, and a section in [services/README.md](services/README.md).
 - **Feature**: something that grows *inside* a service. It should be configuration or code, not new infrastructure, whenever possible.
 
-Example: every YouForm form shares one webhook, one function, one bucket and one table. A new form is a new entry in a map, which also acts as the allowlist:
+Example: every YouForm form shares one webhook, one function, one bucket and one table. A new form is a new entry in a map, which also acts as the allowlist (form IDs come from sensitive variables):
 
 ```hcl
 locals {
   youform_forms = {
-    ajbsvmgt = "participant-feedback"
-    txrpjpz3 = "leader-self-assessment"
+    (var.youform_participant_feedback_form_id)   = { slug = "participant-feedback", store_in_dynamodb = true }
+    (var.youform_leader_self_assessment_form_id) = { slug = "leader-self-assessment", store_in_dynamodb = false }
   }
 }
 ```
@@ -101,7 +101,8 @@ New infrastructure for a feature (another table, queue, function) needs a reason
 This repository is public.
 
 - Everything is written in English: code, comments, docs, workflow text.
-- Never commit the AWS account ID, local profile names, credentials, tokens or personal data. Use `data.aws_caller_identity` in Terraform and GitHub secrets in CI.
+- Never commit the AWS account ID, local profile names, credentials, tokens, external form IDs or personal data. Use `data.aws_caller_identity` in Terraform and GitHub secrets in CI.
+- Account-specific or confidential values go in GitHub **secrets** (masked in logs). GitHub **variables** are only for values that are already public (e.g. form IDs). Both are declared as `sensitive` Terraform variables. Outputs that would reveal endpoints or identifiers are `sensitive`.
 - Do not output identifiers (account ID, ARNs) from Terraform; Actions logs are public.
 - Runtime secrets (e.g. webhook tokens) live in AWS Secrets Manager, never in GitHub or in the repo.
 - `.env` is git-ignored; `.env.example` lists the keys without values.
@@ -109,9 +110,10 @@ This repository is public.
 ## 6. Lambda code and packaging
 
 - Python, stdlib + `boto3` (already in the runtime) by default.
-- Packaged by Terraform with the `archive_file` data source from `services/<function>/`. No per-function build scripts.
+- Packaged by Terraform with the `archive_file` data source from `services/<function>/src/` (built into the git-ignored `.build/`). No per-function build scripts.
 - If a function needs third-party dependencies, add a build step for that function only and record why in [decisions.md](decisions.md).
-- Each function has unit tests in `services/<function>/tests/` that run without AWS.
+- Each function has unit tests in `services/<function>/tests/` (stdlib `unittest`) that run without AWS. CI runs them before Terraform.
+- Never log form answers or personal data; log identifiers and outcomes only.
 
 ## 7. Environment and delivery
 
