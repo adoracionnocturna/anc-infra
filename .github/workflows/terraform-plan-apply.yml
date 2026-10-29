@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "infra/**"
+      - "services/**"
       - ".github/workflows/terraform-plan-apply.yml"
   workflow_dispatch:
     inputs:
