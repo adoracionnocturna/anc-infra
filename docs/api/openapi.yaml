@@ -1,0 +1,296 @@
+openapi: 3.1.0
+info:
+  title: ANC Insights API
+  version: 1.0.0
+  description: |
+    Read-only access to YouForm submissions stored by ANC, for insights dashboards.
+
+    Authentication: Cognito user pool access token (`Authorization: Bearer <token>`) of a user in the
+    `insights-readers` group. See docs/api/README.md for configuration values, user management and a
+    Vite + React client example.
+
+    Timestamps are ISO 8601 in Bogotá time (`-05:00`). Responses are never cacheable (`Cache-Control: no-store`).
+servers:
+  - url: https://{apiId}.execute-api.us-east-1.amazonaws.com
+    description: Production. `apiId` comes from `terraform output -json insights_web_config` (VITE_API_URL).
+    variables:
+      apiId:
+        default: your-api-id
+security:
+  - cognitoAccessToken: []
+tags:
+  - name: insights
+    description: Form submissions for dashboards.
+paths:
+  /insights/forms:
+    get:
+      tags: [insights]
+      operationId: listForms
+      summary: List readable forms
+      description: Forms whose submissions can be read, with their submission counts.
+      responses:
+        "200":
+          description: Readable forms.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FormList"
+              example:
+                items:
+                  - form: participant-feedback
+                    submission_count: 42
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /insights/forms/{form}/submissions:
+    get:
+      tags: [insights]
+      operationId: listSubmissions
+      summary: List submissions of a form
+      description: |
+        Paginated. Follow `next_cursor` until it is `null` to load every submission.
+        Items are ordered by `submission_id`, not by date.
+      parameters:
+        - $ref: "#/components/parameters/Form"
+        - name: limit
+          in: query
+          description: Page size.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: cursor
+          in: query
+          description: Opaque `next_cursor` value from the previous page.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: One page of submissions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubmissionPage"
+        "400":
+          $ref: "#/components/responses/InvalidParameter"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /insights/forms/{form}/submissions/{submission_id}:
+    get:
+      tags: [insights]
+      operationId: getSubmission
+      summary: Get one submission
+      parameters:
+        - $ref: "#/components/parameters/Form"
+        - name: submission_id
+          in: path
+          required: true
+          description: YouForm submission ID.
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]{1,128}$"
+      responses:
+        "200":
+          description: The submission.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Submission"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
+components:
+  securitySchemes:
+    cognitoAccessToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Access token (not the ID token) issued by the Cognito user pool `anc-prod-users` to the app client
+        `anc-prod-insights-web`. The user must belong to the `insights-readers` group. Tokens last 1 hour.
+  parameters:
+    Form:
+      name: form
+      in: path
+      required: true
+      description: Form slug, as returned by `GET /insights/forms`.
+      schema:
+        type: string
+        enum: [participant-feedback]
+  schemas:
+    FormList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [form, submission_count]
+            properties:
+              form:
+                type: string
+                description: Form slug.
+                example: participant-feedback
+              submission_count:
+                type: integer
+                minimum: 0
+    SubmissionPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Submission"
+        next_cursor:
+          type: [string, "null"]
+          description: Cursor for the next page; `null` on the last page.
+    Submission:
+      type: object
+      required: [form, submission_id, answers]
+      properties:
+        form:
+          type: string
+          description: Form slug.
+          example: participant-feedback
+        submission_id:
+          type: string
+          example: x1y2z3w4v5
+        form_name:
+          type: [string, "null"]
+          description: Form title in YouForm.
+        started_at:
+          $ref: "#/components/schemas/Timestamp"
+        completed_at:
+          $ref: "#/components/schemas/Timestamp"
+        received_at:
+          $ref: "#/components/schemas/Timestamp"
+        answers:
+          type: array
+          description: Sorted by `position`.
+          items:
+            $ref: "#/components/schemas/Answer"
+    Timestamp:
+      type: [string, "null"]
+      format: date-time
+      description: ISO 8601 in Bogotá time. Records stored before 2026-10-29 may be in UTC.
+      example: "2026-10-29T19:57:28-05:00"
+    Answer:
+      type: object
+      required: [field_id]
+      properties:
+        field_id:
+          type: string
+          description: Stable YouForm field ID. Use it, not the question text, to group answers.
+        position:
+          type: integer
+          description: Order of the question in the form.
+        type:
+          type: string
+          description: YouForm field type.
+          examples: [radio, checkbox, nps, opinion_scale, textarea]
+        question:
+          type: string
+          description: Question text as it was when the submission arrived.
+        answer:
+          description: |
+            Absent when the question was not answered.
+            - `nps`, `opinion_scale`, `rating`, `number`: number (text if YouForm sent a non-numeric value).
+            - `checkbox`: array of selected options.
+            - Other types: string.
+          oneOf:
+            - type: string
+            - type: number
+            - type: array
+              items:
+                type: string
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          enum: [invalid_parameter, forbidden, not_found, internal_error]
+        message:
+          type: string
+    GatewayError:
+      type: object
+      description: Error produced by API Gateway before the request reaches the service.
+      properties:
+        message:
+          type: string
+  responses:
+    InvalidParameter:
+      description: Invalid `limit` or `cursor`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: invalid_parameter
+            message: limit must be an integer between 1 and 100.
+    Unauthorized:
+      description: Missing, invalid or expired access token.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/GatewayError"
+          example:
+            message: Unauthorized
+    Forbidden:
+      description: The user is not in the `insights-readers` group.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: forbidden
+            message: User is not allowed to read insights.
+    NotFound:
+      description: Unknown form, submission or route.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: not_found
+            message: Unknown form.
+    TooManyRequests:
+      description: Throttled (10 requests/second, burst 20). Retry with backoff.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/GatewayError"
+          example:
+            message: Too Many Requests
+    InternalError:
+      description: Unexpected error.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error: internal_error
+            message: Unexpected error.

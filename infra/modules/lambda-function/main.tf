@@ -1,7 +1,10 @@
+# Deterministic package: same zip on Windows and Linux, without bytecode written by the tests.
 data "archive_file" "this" {
-  type        = "zip"
-  source_dir  = var.source_dir
-  output_path = "${path.root}/.build/${var.function_name}.zip"
+  type             = "zip"
+  source_dir       = var.source_dir
+  output_path      = "${path.root}/.build/${var.function_name}.zip"
+  output_file_mode = "0644"
+  excludes         = ["__pycache__"]
 }
 
 resource "aws_iam_role" "this" {

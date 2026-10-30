@@ -5,6 +5,14 @@ Every service deployed from this repository. Update this file in the same commit
 | Service | Status | Entry point | Terraform | Code |
 | --- | --- | --- | --- | --- |
 | `youform-intake` | Active | `POST /webhooks/youform` from YouForm | `infra/prod/youform-intake.tf` | `services/youform_webhook/` |
+| `insights-api` | Active | `GET /insights/...` from the insights frontend | `infra/prod/insights-api.tf` | `services/insights_api/` |
+
+Shared by every service (not services themselves):
+
+| Component | Terraform | Purpose |
+| --- | --- | --- |
+| HTTP API `anc-prod-api` | `infra/prod/api.tf` | Single API Gateway; each service contributes its routes. Client guide: [../api/README.md](../api/README.md) |
+| Cognito user pool `anc-prod-users` | `infra/prod/auth.tf` | Users of ANC web apps; access per app through groups |
 
 ---
 
@@ -14,7 +22,7 @@ Every service deployed from this repository. Update this file in the same commit
 
 **Purpose.** Receive YouForm submissions through a signed webhook and store them. Every form keeps its raw payload in S3; selected forms also get a normalized record in DynamoDB.
 
-**Entry point.** YouForm webhook → API Gateway HTTP API (`POST /webhooks/youform`, throttled) → Lambda `anc-prod-youform-webhook`. The webhook URL is a sensitive Terraform output (`youform_webhook_url`), never printed in CI.
+**Entry point.** YouForm webhook → shared HTTP API `anc-prod-api` (`POST /webhooks/youform`, throttled, no JWT: the signature authenticates) → Lambda `anc-prod-youform-webhook`. The webhook URL is a sensitive Terraform output (`youform_webhook_url`), never printed in CI.
 
 **Features (forms).** Form IDs are not stored in the repository; they come from GitHub variables.
 
@@ -34,7 +42,7 @@ Every service deployed from this repository. Update this file in the same commit
 
 | Resource | Name |
 | --- | --- |
-| HTTP API | `anc-prod-youform-api` |
+| Route on the shared HTTP API | `POST /webhooks/youform` on `anc-prod-api` |
 | Lambda + role + log group (30 days) | `anc-prod-youform-webhook` |
 | S3 bucket (private, SSE-S3, versioned, TLS only) | `anc-prod-youform-submissions-<account_id>-us-east-1` |
 | DynamoDB table (on-demand, PITR, deletion protection) | `anc-prod-youform-responses` |
@@ -66,6 +74,48 @@ Add the secret before creating the webhook: YouForm disables a webhook whose tes
 - Logs: CloudWatch log group `/aws/lambda/anc-prod-youform-webhook`. Logs carry form slug, submission ID and outcome, never answers.
 - Failed deliveries: YouForm retries non-2xx responses automatically and keeps delivery logs for 15 days, with a manual retry button.
 - Adding a form: new GitHub variable with the form ID, new variable in `infra/prod/variables.tf` and workflow `env`, new entry in `local.youform_forms`, new key in the signing-secret JSON.
+
+---
+
+## insights-api
+
+**Status:** active.
+
+**Purpose.** Authenticated, read-only access to the YouForm submissions stored in DynamoDB, for the insights frontend (charts). Full client guide and contract: [../api/README.md](../api/README.md), [../api/openapi.yaml](../api/openapi.yaml).
+
+**Entry point.** Browser (Vite + React) → shared HTTP API `anc-prod-api` with the Cognito JWT authorizer → Lambda `anc-prod-insights-api`.
+
+| Route | Returns |
+| --- | --- |
+| `GET /insights/forms` | Readable forms and submission counts |
+| `GET /insights/forms/{form}/submissions` | Submissions of a form, paginated (`limit`, `cursor`) |
+| `GET /insights/forms/{form}/submissions/{submission_id}` | One submission |
+
+**Features (forms).** Readable forms are derived from `local.youform_forms`: every form with `store_in_dynamodb = true`, addressed by its slug. Forms stored only in S3 (`leader-self-assessment`) are never readable. A new DynamoDB form becomes readable without changes here.
+
+**Access control.**
+
+1. API Gateway validates the Cognito access token (signature, issuer, expiry, app client `anc-prod-insights-web`); invalid tokens get `401` before the Lambda runs.
+2. The Lambda requires the `cognito:groups` claim to contain `insights-readers` (`403` otherwise).
+3. IAM: the Lambda role can only `dynamodb:Query` and `dynamodb:GetItem` the partitions of readable forms (`dynamodb:LeadingKeys`). No writes, scans or S3 access.
+
+**Response shaping.** Internal keys (`pk`, `sk`, `form_id`, `raw_s3_key`) are not returned. Answers are a list sorted by position; numeric types (`nps`, `opinion_scale`, `rating`, `number`) become numbers and `checkbox` answers become lists. Responses are `Cache-Control: no-store`.
+
+**Resources.**
+
+| Resource | Name |
+| --- | --- |
+| Lambda + role + log group (30 days) | `anc-prod-insights-api` |
+| Routes on the shared HTTP API (JWT authorizer `anc-prod-api-jwt`) | `GET /insights/...` on `anc-prod-api` |
+| Cognito app client (public, SRP sign-in) | `anc-prod-insights-web` in `anc-prod-users` |
+| Cognito group | `insights-readers` |
+
+**Operations.**
+
+- Logs: `/aws/lambda/anc-prod-insights-api`, with route, status and error code only.
+- Users: created by an administrator, no emails; see [../api/README.md#2-users-and-access](../api/README.md#2-users-and-access).
+- Frontend configuration: `terraform output -json insights_web_config` (sensitive output).
+- New frontend origin: add it to `local.api_allowed_origins` in `infra/prod/api.tf`.
 
 ---
 

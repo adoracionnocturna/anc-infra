@@ -7,6 +7,7 @@ Read before changing anything:
 - [docs/terraform-guidelines.md](docs/terraform-guidelines.md): layout, naming, when to create modules, public-repo rules.
 - [docs/decisions.md](docs/decisions.md): why things are the way they are.
 - [docs/services/README.md](docs/services/README.md): what is deployed.
+- [docs/api/README.md](docs/api/README.md) and [docs/api/openapi.yaml](docs/api/openapi.yaml): API contract for clients; update them with every route change.
 
 Key rules:
 

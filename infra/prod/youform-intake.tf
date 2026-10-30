@@ -102,12 +102,14 @@ module "youform_webhook" {
   })
 }
 
-module "youform_api" {
-  source = "../modules/http-api"
-
-  name                 = "${local.youform_intake_name}-api"
-  lambda_function_name = module.youform_webhook.function_name
-  lambda_invoke_arn    = module.youform_webhook.invoke_arn
-  route_keys           = ["POST /webhooks/youform"]
-  tags                 = local.youform_tags
+# Public route on the shared API (api.tf); requests are authenticated by the YouForm signature.
+locals {
+  youform_intake_api = {
+    integrations = {
+      youform_webhook = { function_name = module.youform_webhook.function_name, invoke_arn = module.youform_webhook.invoke_arn }
+    }
+    routes = {
+      "POST /webhooks/youform" = { integration = "youform_webhook" }
+    }
+  }
 }

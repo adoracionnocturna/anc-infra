@@ -16,11 +16,12 @@ The AWS account is shared with other projects. Every ANC resource uses the `anc-
 - [docs/terraform-guidelines.md](docs/terraform-guidelines.md): how Terraform is organized and named, and how to add features and services without over-engineering.
 - [docs/decisions.md](docs/decisions.md): decision log.
 - [docs/services/README.md](docs/services/README.md): service catalog.
+- [docs/api/README.md](docs/api/README.md): how to connect a client (e.g. the insights frontend) to the API; contract in [docs/api/openapi.yaml](docs/api/openapi.yaml).
 
 ## Layout
 
 - `bootstrap/iam/`: GitHub Actions OIDC deploy role, created manually. See [bootstrap/iam/README.md](bootstrap/iam/README.md).
-- `infra/prod/`: Terraform root module for `prod` (one file per service).
+- `infra/prod/`: Terraform root module for `prod` (one file per service, plus the shared `api.tf` and `auth.tf`).
 - `infra/modules/`: building blocks (`lambda-function`, `http-api`, `s3-private-bucket`).
 - `services/`: Lambda source code and tests.
 - `infra/scripts/bootstrap-state-bucket.sh`: ensures the remote state bucket exists before `terraform init`.

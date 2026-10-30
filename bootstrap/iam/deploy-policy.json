@@ -103,6 +103,28 @@
       }
     },
     {
+      "Sid": "CognitoCreateAncUserPools",
+      "Effect": "Allow",
+      "Action": "cognito-idp:CreateUserPool",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestTag/Project": "anc"
+        }
+      }
+    },
+    {
+      "Sid": "CognitoManageAncUserPools",
+      "Effect": "Allow",
+      "Action": "cognito-idp:*",
+      "Resource": "arn:aws:cognito-idp:us-east-1:<AWS_ACCOUNT_ID>:userpool/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Project": "anc"
+        }
+      }
+    },
+    {
       "Sid": "SecretsAnc",
       "Effect": "Allow",
       "Action": "secretsmanager:*",

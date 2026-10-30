@@ -13,6 +13,7 @@ anc-infra/
 │   ├── prod/                 # Root module: composition only
 │   │   ├── backend.tf  versions.tf  providers.tf  variables.tf
 │   │   ├── locals.tf         # Shared naming, tags, region
+│   │   ├── api.tf  auth.tf   # Shared platform: HTTP API, Cognito user pool
 │   │   ├── <service>.tf      # One file per service
 │   │   └── outputs.tf
 │   ├── modules/              # Generic building blocks (no business logic)
@@ -22,8 +23,29 @@ anc-infra/
 │   └── <function_name>/
 │       ├── src/handler.py    # Only src/ is packaged
 │       └── tests/test_*.py   # unittest, no AWS needed
-└── docs/                     # This guide, decision log, service catalog
+└── docs/                     # This guide, decision log, service catalog, API docs (docs/api/)
 ```
+
+### Shared platform files
+
+A few resources are shared by every service and live in their own root file, not in a service file:
+
+- `api.tf`: the single HTTP API. A service never creates its own API; it declares a local and `api.tf` merges it:
+
+  ```hcl
+  # infra/prod/<service>.tf
+  locals {
+    my_service_api = {
+      integrations = { my_function = { function_name = module.my_function.function_name, invoke_arn = module.my_function.invoke_arn } }
+      routes       = { "GET /my-service/items" = { integration = "my_function", authorized = true } }
+    }
+  }
+  ```
+
+  Routes are namespaced by service (`/webhooks/...`, `/insights/...`). `authorized = true` requires a Cognito access token; the service also checks its group.
+- `auth.tf`: the Cognito user pool. A web app adds its own app client there and its own group in its service file.
+
+Every route change must also update [api/README.md](api/README.md) and [api/openapi.yaml](api/openapi.yaml).
 
 ## 2. Two layers, never three
 

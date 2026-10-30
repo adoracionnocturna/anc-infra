@@ -4,6 +4,21 @@ Short, dated records of decisions that shape this repository. Newest first. Each
 
 ---
 
+## 2026-10-30 — Insights read API: shared HTTP API, Cognito users, group-based access
+
+**Context.** A browser frontend (Vite + React) will read the participant feedback submissions to build insight charts. The data contains personal answers, and anything shipped to a browser is public, so API keys or static tokens are not acceptable.
+
+**Decision.**
+- **One HTTP API for all services** (`anc-prod-api`, `infra/prod/api.tf`). Each service file declares its integrations and routes in a local (`<service>_api`) and `api.tf` merges them. The former `anc-prod-youform-api` was moved (Terraform `moved` blocks, same API ID), so the YouForm webhook URL did not change. The `http-api` module now supports several Lambda integrations, an optional JWT authorizer and optional CORS.
+- **Cognito user pool for people** (`anc-prod-users`, `infra/prod/auth.tf`), shared by future web apps: admin-created users only, no emails (recovery by an administrator), strong password policy, deletion protection. Each app gets its own public app client (SRP, no secret) and access is granted per app through groups (`insights-readers`).
+- **Authorization in two layers**: API Gateway's native JWT authorizer validates the access token; the Lambda requires the group claim. IAM limits the Lambda to read-only access to the partitions of DynamoDB-stored forms. Forms stored only in S3 are never exposed.
+- **Full submissions, not aggregates**, with light normalization (numbers, checkbox lists, sorted answers) so the frontend can compute any chart.
+- **Contract documented** in [api/README.md](api/README.md) and [api/openapi.yaml](api/openapi.yaml).
+- The deploy role may manage Cognito user pools only when tagged `Project=anc` (pool ARNs contain IDs, not names).
+- Deterministic Lambda packages: `.gitattributes` forces LF, and `archive_file` excludes `__pycache__` (written by the tests) and fixes file modes, so packages built on Windows match the ones built in CI and unchanged code does not redeploy.
+
+**Consequences.** MFA is off for now (no SMS/email); enable TOTP if the audience grows. CORS must list every frontend origin (`local.api_allowed_origins`). Removing a user's access takes effect when their current access token expires (at most 1 hour). Pool and client IDs appear in CI apply logs; they are public by nature (they ship in the frontend bundle).
+
 ## 2026-10-29 — Timestamps in Bogotá time
 
 **Context.** YouForm sends timestamps in UTC. The people using the data are in Colombia, and UTC dates near midnight land on the wrong day or month.

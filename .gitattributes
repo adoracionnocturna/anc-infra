@@ -1,0 +1,2 @@
+# Same line endings on every OS, so Lambda packages built locally match the ones built in CI.
+* text=auto eol=lf
