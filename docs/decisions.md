@@ -4,6 +4,14 @@ Short, dated records of decisions that shape this repository. Newest first. Each
 
 ---
 
+## 2026-10-29 — Timestamps in Bogotá time
+
+**Context.** YouForm sends timestamps in UTC. The people using the data are in Colombia, and UTC dates near midnight land on the wrong day or month.
+
+**Decision.** Normalized timestamps (`started_at`, `completed_at`, `received_at` in DynamoDB) and the S3 `YYYY/MM` prefix use Bogotá time (UTC-5, no daylight saving time). Timestamps are ISO 8601 with explicit `-05:00` offset, so they remain exact instants. The raw payload in S3 is never modified.
+
+**Consequences.** Records written before this change keep UTC timestamps until re-processed.
+
 ## 2026-10-29 — youform-intake design
 
 **Context.** Two YouForm forms must be received: participant feedback (needs queryable data) and leader self-assessment (must only reach S3). Many more forms are expected.

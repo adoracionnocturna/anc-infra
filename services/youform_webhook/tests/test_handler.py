@@ -182,6 +182,29 @@ class HandlerTest(unittest.TestCase):
         self.assertEqual(response["error"], "storage_error")
         self.assertEqual(self.table.items, [])
 
+    def test_timestamps_are_stored_in_bogota_time(self):
+        handler.handler(event(payload(PARTICIPANT_FORM), SECRETS[PARTICIPANT_FORM]), None)
+
+        item = self.table.items[0]
+        self.assertEqual(item["started_at"], "2026-11-02T09:30:02-05:00")
+        self.assertEqual(item["completed_at"], "2026-11-02T10:32:33-05:00")
+        self.assertRegex(item["received_at"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}-05:00$")
+
+    def test_s3_month_follows_bogota_time(self):
+        # 2026-11-01 02:00 UTC is still 2026-10-31 21:00 in Bogotá.
+        body = payload(LEADER_FORM)
+        body["completed_at"] = "2026-11-01T02:00:00.000000Z"
+        status, _ = self.invoke(event(body, SECRETS[LEADER_FORM]))
+
+        self.assertEqual(status, 200)
+        self.assertIn("bucket/submissions/leader-self-assessment/2026/10/sub123.json", self.s3.objects)
+
+    def test_unparseable_timestamp_is_kept_as_received(self):
+        body = payload(PARTICIPANT_FORM)
+        body["started_at"] = "not a date"
+        self.invoke(event(body, SECRETS[PARTICIPANT_FORM]))
+        self.assertEqual(self.table.items[0]["started_at"], "not a date")
+
     def test_missing_completed_at_uses_received_date(self):
         body = payload(LEADER_FORM)
         del body["completed_at"]

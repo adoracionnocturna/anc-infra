@@ -44,8 +44,9 @@ The Lambda role can only write `submissions/*` in S3, and its DynamoDB `PutItem`
 
 **Data layout.**
 
-- S3: `submissions/<slug>/<YYYY>/<MM>/<submission_id>.json`, the request body exactly as received. `YYYY/MM` come from `completed_at`.
+- S3: `submissions/<slug>/<YYYY>/<MM>/<submission_id>.json`, the request body exactly as received (YouForm timestamps stay in UTC there). `YYYY/MM` come from `completed_at` in Bogotá time (falls back to the receive time).
 - DynamoDB: `pk = FORM#<form_id>`, `sk = SUBMISSION#<submission_id>`. Attributes: `form_id`, `form_slug`, `form_name`, `submission_id`, `started_at`, `completed_at`, `received_at`, `raw_s3_key`, `answers`. `answers` is a map keyed by YouForm field ID: `{question, type, answer, position}`. Keying by field ID keeps records stable when question text is edited.
+- Timestamps in DynamoDB are ISO 8601 in Bogotá time with explicit offset, e.g. `2026-10-29T19:57:28-05:00`. YouForm sends UTC (`...Z`); values that cannot be parsed are stored as received.
 
 **Setup of a form's webhook.**
 

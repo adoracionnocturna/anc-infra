@@ -14,7 +14,7 @@ import json
 import logging
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -23,6 +23,8 @@ logger.setLevel(logging.INFO)
 
 SUBMISSION_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 FIELD_ATTRIBUTES = ("question", "type", "answer", "position")
+# Bogotá is UTC-5 all year (no daylight saving time), so a fixed offset is exact.
+BOGOTA = timezone(timedelta(hours=-5), "America/Bogota")
 
 _signing_secrets: dict[str, str] | None = None
 _clients: dict[str, Any] = {}
@@ -85,11 +87,25 @@ def _valid_signature(raw_body: bytes, signature: str | None, secret: str) -> boo
     return hmac.compare_digest(expected, signature.strip().lower())
 
 
-def _s3_key(slug: str, submission_id: str, completed_at: Any, received_at: datetime) -> str:
+def _bogota_time(value: Any) -> datetime | None:
+    """Parses a YouForm timestamp (UTC, e.g. "2026-10-30T00:57:28.000000Z") into Bogotá time."""
     try:
-        submitted = datetime.fromisoformat(str(completed_at))
+        parsed = datetime.fromisoformat(str(value))
     except ValueError:
-        submitted = received_at
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(BOGOTA)
+
+
+def _bogota_iso(value: Any) -> Any:
+    """ISO 8601 in Bogotá time with explicit offset; unparseable values are kept as received."""
+    parsed = _bogota_time(value)
+    return parsed.isoformat(timespec="seconds") if parsed else value
+
+
+def _s3_key(slug: str, submission_id: str, completed_at: Any, received_at: datetime) -> str:
+    submitted = _bogota_time(completed_at) or received_at.astimezone(BOGOTA)
     return f"submissions/{slug}/{submitted:%Y}/{submitted:%m}/{submission_id}.json"
 
 
@@ -112,9 +128,9 @@ def _dynamodb_item(payload: dict[str, Any], slug: str, s3_key: str, received_at:
         "form_slug": slug,
         "form_name": payload.get("form_name"),
         "submission_id": payload["submission_id"],
-        "started_at": payload.get("started_at"),
-        "completed_at": payload.get("completed_at"),
-        "received_at": received_at.isoformat(),
+        "started_at": _bogota_iso(payload.get("started_at")),
+        "completed_at": _bogota_iso(payload.get("completed_at")),
+        "received_at": _bogota_iso(received_at),
         "raw_s3_key": s3_key,
         "answers": _normalized_answers(payload.get("fields")),
     }
