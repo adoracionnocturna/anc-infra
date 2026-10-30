@@ -4,6 +4,14 @@ Short, dated records of decisions that shape this repository. Newest first. Each
 
 ---
 
+## 2026-10-30 — Storage summary endpoint; bucket identifiers sensitive
+
+**Context.** The frontend needs to show how many raw submission files exist in S3 and in which folders, including forms that are stored only in S3.
+
+**Decision.** `GET /insights/storage` in `insights-api` returns totals per form and per folder (count, bytes, last change). It never returns file names (they contain submission IDs), contents or the bucket name (it contains the account ID). The Lambda gets `s3:ListBucket` limited to the `submissions/` prefix and no `s3:GetObject`. The `s3-private-bucket` module now marks `bucket_name` and `bucket_arn` as sensitive so they never appear in plan diffs shown in public CI logs.
+
+**Consequences.** S3-only forms (`leader-self-assessment`) expose file counts and sizes, not data. Listing is O(files); revisit (e.g. S3 Inventory) if the bucket grows to tens of thousands of files.
+
 ## 2026-10-30 — Insights API temporarily public
 
 **Context.** Authentication is not critical yet, and the frontend needs to read the data now without a sign-in flow. Supersedes the enforcement part of "Insights read API" below.

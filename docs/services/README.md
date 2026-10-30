@@ -81,7 +81,7 @@ Add the secret before creating the webhook: YouForm disables a webhook whose tes
 
 **Status:** active, **public** (authentication temporarily disabled).
 
-**Purpose.** Read-only access to the YouForm submissions stored in DynamoDB, for the insights frontend (charts). Full client guide and contract: [../api/README.md](../api/README.md), [../api/openapi.yaml](../api/openapi.yaml).
+**Purpose.** Read-only access to the YouForm submissions stored in DynamoDB, plus a summary of the raw files in S3 (counts per folder), for the insights frontend (charts). Full client guide and contract: [../api/README.md](../api/README.md), [../api/openapi.yaml](../api/openapi.yaml).
 
 **Entry point.** Browser (Vite + React) → shared HTTP API `anc-prod-api` → Lambda `anc-prod-insights-api`.
 
@@ -90,6 +90,7 @@ Add the secret before creating the webhook: YouForm disables a webhook whose tes
 | `GET /insights/forms` | Readable forms and submission counts |
 | `GET /insights/forms/{form}/submissions` | Submissions of a form, paginated (`limit`, `cursor`) |
 | `GET /insights/forms/{form}/submissions/{submission_id}` | One submission |
+| `GET /insights/storage` | Raw files in S3 under `submissions/`: totals, per form and per folder (counts, bytes, last change; no file names) |
 
 **Features (forms).** Readable forms are derived from `local.youform_forms`: every form with `store_in_dynamodb = true`, addressed by its slug. Forms stored only in S3 (`leader-self-assessment`) are never readable. A new DynamoDB form becomes readable without changes here.
 
@@ -98,7 +99,7 @@ Add the secret before creating the webhook: YouForm disables a webhook whose tes
 1. API Gateway validates the Cognito access token (signature, issuer, expiry, app client `anc-prod-insights-web`); invalid tokens get `401` before the Lambda runs.
 2. The Lambda requires the `cognito:groups` claim to contain `insights-readers` (`403` otherwise). The group is passed as `READER_GROUP`; without it the Lambda skips the check.
 
-Always on: IAM lets the Lambda role only `dynamodb:Query` and `dynamodb:GetItem` the partitions of readable forms (`dynamodb:LeadingKeys`). No writes, scans or S3 access.
+Always on: IAM lets the Lambda role only `dynamodb:Query` and `dynamodb:GetItem` the partitions of readable forms (`dynamodb:LeadingKeys`) and `s3:ListBucket` on the submissions bucket restricted to `s3:prefix` `submissions/*`. No writes, scans or `s3:GetObject`: file contents are never readable.
 
 **Response shaping.** Internal keys (`pk`, `sk`, `form_id`, `raw_s3_key`) are not returned. Answers are a list sorted by position; numeric types (`nps`, `opinion_scale`, `rating`, `number`) become numbers and `checkbox` answers become lists. Responses are `Cache-Control: no-store`.
 

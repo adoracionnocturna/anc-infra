@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import unittest
+from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -37,6 +38,29 @@ class FakeTable:
             if item["pk"] == Key["pk"] and item["sk"] == Key["sk"]:
                 return {"Item": item}
         return {}
+
+
+class FakeS3:
+    """In-memory stand-in for list_objects_v2, paginated by page_size keys."""
+
+    def __init__(self, objects: list[dict], page_size: int = 2):
+        self.objects = sorted(objects, key=lambda obj: obj["Key"])
+        self.page_size = page_size
+        self.calls: list[dict] = []
+
+    def list_objects_v2(self, Bucket, Prefix, ContinuationToken=None):
+        self.calls.append({"Bucket": Bucket, "Prefix": Prefix})
+        matches = [obj for obj in self.objects if obj["Key"].startswith(Prefix)]
+        start = int(ContinuationToken or 0)
+        page = matches[start : start + self.page_size]
+        result = {"Contents": page, "IsTruncated": start + self.page_size < len(matches)}
+        if result["IsTruncated"]:
+            result["NextContinuationToken"] = str(start + self.page_size)
+        return result
+
+
+def s3_object(key: str, size: int, hour_utc: int) -> dict:
+    return {"Key": key, "Size": size, "LastModified": datetime(2026, 10, 30, hour_utc, 0, tzinfo=timezone.utc)}
 
 
 def stored_item(submission_id: str, form_id: str = FORM_ID) -> dict:
@@ -79,11 +103,23 @@ class HandlerTest(unittest.TestCase):
         os.environ["FORMS_CONFIG"] = json.dumps({"participant-feedback": FORM_ID})
         os.environ["RESPONSES_TABLE"] = "table"
         os.environ["READER_GROUP"] = READER_GROUP
+        os.environ["SUBMISSIONS_BUCKET"] = "bucket"
         self.table = FakeTable(
             [stored_item(f"sub{i}") for i in range(5)] + [stored_item("other", form_id="form0002")]
         )
+        self.s3 = FakeS3(
+            [
+                s3_object("submissions/participant-feedback/2026/10/a.json", 100, 1),
+                s3_object("submissions/participant-feedback/2026/10/b.json", 200, 3),
+                s3_object("submissions/participant-feedback/2026/11/c.json", 50, 2),
+                s3_object("submissions/leader-self-assessment/2026/10/d.json", 300, 5),
+                s3_object("submissions/stray.json", 10, 0),
+                s3_object("other/ignored.json", 999, 9),
+            ]
+        )
         handler._clients.clear()
         handler._clients["responses_table"] = self.table
+        handler._clients["s3"] = self.s3
 
     def invoke(self, evt: dict) -> tuple[int, dict, dict]:
         result = handler.handler(evt, None)
@@ -192,6 +228,71 @@ class HandlerTest(unittest.TestCase):
             self.assertEqual(status, 403)
             self.assertEqual(body["error"], "forbidden")
         self.assertEqual(self.table.queries, [])
+
+    def test_storage_counts_files_per_folder_and_form(self):
+        status, body, _ = self.invoke(event("GET /insights/storage"))
+
+        self.assertEqual(status, 200)
+        self.assertEqual(self.s3.calls[0], {"Bucket": "bucket", "Prefix": "submissions/"})
+        self.assertEqual(len(self.s3.calls), 3)  # 5 objects, pages of 2
+        self.assertEqual(
+            body,
+            {
+                "prefix": "submissions/",
+                "files": 5,
+                "bytes": 660,
+                "last_modified": "2026-10-30T00:00:00-05:00",
+                "forms": [
+                    {"form": None, "files": 1, "bytes": 10, "last_modified": "2026-10-29T19:00:00-05:00"},
+                    {"form": "leader-self-assessment", "files": 1, "bytes": 300, "last_modified": "2026-10-30T00:00:00-05:00"},
+                    {"form": "participant-feedback", "files": 3, "bytes": 350, "last_modified": "2026-10-29T22:00:00-05:00"},
+                ],
+                "folders": [
+                    {
+                        "path": "submissions/",
+                        "form": None,
+                        "files": 1,
+                        "bytes": 10,
+                        "last_modified": "2026-10-29T19:00:00-05:00",
+                    },
+                    {
+                        "path": "submissions/leader-self-assessment/2026/10/",
+                        "form": "leader-self-assessment",
+                        "files": 1,
+                        "bytes": 300,
+                        "last_modified": "2026-10-30T00:00:00-05:00",
+                    },
+                    {
+                        "path": "submissions/participant-feedback/2026/10/",
+                        "form": "participant-feedback",
+                        "files": 2,
+                        "bytes": 300,
+                        "last_modified": "2026-10-29T22:00:00-05:00",
+                    },
+                    {
+                        "path": "submissions/participant-feedback/2026/11/",
+                        "form": "participant-feedback",
+                        "files": 1,
+                        "bytes": 50,
+                        "last_modified": "2026-10-29T21:00:00-05:00",
+                    },
+                ],
+            },
+        )
+
+    def test_storage_never_returns_file_names(self):
+        _, body, _ = self.invoke(event("GET /insights/storage"))
+        self.assertNotIn(".json", json.dumps(body))
+        self.assertNotIn("bucket", json.dumps(body))
+
+    def test_storage_of_empty_bucket(self):
+        handler._clients["s3"] = FakeS3([])
+        status, body, _ = self.invoke(event("GET /insights/storage"))
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            body,
+            {"prefix": "submissions/", "files": 0, "bytes": 0, "last_modified": None, "forms": [], "folders": []},
+        )
 
     def test_public_mode_skips_group_check(self):
         del os.environ["READER_GROUP"]

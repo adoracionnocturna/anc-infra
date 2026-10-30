@@ -1,4 +1,5 @@
-"""Insights API: read-only access to normalized YouForm submissions in DynamoDB.
+"""Insights API: read-only access to normalized YouForm submissions in DynamoDB, plus a summary
+of the raw submission files in S3 (counts and sizes per folder, never file names or contents).
 
 With READER_GROUP set, API Gateway validates the Cognito access token (JWT authorizer) and this
 function additionally requires membership in that group. Without it, the API is public.
@@ -13,6 +14,7 @@ import json
 import logging
 import os
 import re
+from datetime import timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
@@ -28,6 +30,9 @@ ANSWER_ATTRIBUTES = ("position", "type", "question")
 NUMERIC_TYPES = {"nps", "opinion_scale", "rating", "number"}
 # YouForm joins the selected options of a checkbox with ", "; they are returned as a list.
 MULTIPLE_CHOICE_TYPES = {"checkbox"}
+STORAGE_PREFIX = "submissions/"
+# Bogotá is UTC-5 all year (no daylight saving time), so a fixed offset is exact.
+BOGOTA = timezone(timedelta(hours=-5), "America/Bogota")
 
 _clients: dict[str, Any] = {}
 
@@ -46,6 +51,14 @@ def _responses_table() -> Any:
 
         _clients["responses_table"] = boto3.resource("dynamodb").Table(os.environ["RESPONSES_TABLE"])
     return _clients["responses_table"]
+
+
+def _s3() -> Any:
+    if "s3" not in _clients:
+        import boto3
+
+        _clients["s3"] = boto3.client("s3")
+    return _clients["s3"]
 
 
 def _forms() -> dict[str, str]:
@@ -191,10 +204,61 @@ def _get_submission(event: dict[str, Any]) -> dict[str, Any]:
     return _submission(item, slug)
 
 
+def _storage_objects() -> Any:
+    query = {"Bucket": os.environ["SUBMISSIONS_BUCKET"], "Prefix": STORAGE_PREFIX}
+    while True:
+        result = _s3().list_objects_v2(**query)
+        yield from result.get("Contents", [])
+        if not result.get("IsTruncated"):
+            return
+        query["ContinuationToken"] = result["NextContinuationToken"]
+
+
+def _storage_summary(entries: list[dict[str, Any]]) -> dict[str, Any]:
+    modified = [entry["last_modified"] for entry in entries if entry["last_modified"]]
+    return {
+        "files": sum(entry["files"] for entry in entries),
+        "bytes": sum(entry["bytes"] for entry in entries),
+        "last_modified": max(modified) if modified else None,
+    }
+
+
+def _storage(_event: dict[str, Any]) -> dict[str, Any]:
+    """Files per folder under submissions/: counts, sizes and last change, without file names."""
+    folders: dict[str, dict[str, Any]] = {}
+    for obj in _storage_objects():
+        path = obj["Key"].rsplit("/", 1)[0] + "/"
+        folder = folders.setdefault(path, {"path": path, "files": 0, "bytes": 0, "last_modified": None})
+        folder["files"] += 1
+        folder["bytes"] += obj["Size"]
+        modified = obj["LastModified"].astimezone(BOGOTA).isoformat(timespec="seconds")
+        folder["last_modified"] = max(filter(None, (folder["last_modified"], modified)))
+
+    # submissions/<form>/<YYYY>/<MM>/ -> form slug.
+    by_form: dict[str, list[dict[str, Any]]] = {}
+    for folder in folders.values():
+        parts = folder["path"].split("/")
+        folder["form"] = parts[1] if len(parts) > 2 else None
+        by_form.setdefault(folder["form"] or "", []).append(folder)
+
+    ordered = sorted(folders.values(), key=lambda folder: folder["path"])
+    return {
+        "prefix": STORAGE_PREFIX,
+        **_storage_summary(ordered),
+        "forms": [
+            {"form": form or None, **_storage_summary(entries)} for form, entries in sorted(by_form.items())
+        ],
+        "folders": [
+            {key: folder[key] for key in ("path", "form", "files", "bytes", "last_modified")} for folder in ordered
+        ],
+    }
+
+
 ROUTES = {
     "GET /insights/forms": _list_forms,
     "GET /insights/forms/{form}/submissions": _list_submissions,
     "GET /insights/forms/{form}/submissions/{submission_id}": _get_submission,
+    "GET /insights/storage": _storage,
 }
 
 

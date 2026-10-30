@@ -12,6 +12,7 @@ One HTTP API (API Gateway, `anc-prod-api`) serves every ANC service. This guide 
 | `GET /insights/forms` | None (public) | `insights-api` | Readable forms and their submission counts |
 | `GET /insights/forms/{form}/submissions` | None (public) | `insights-api` | Submissions of a form, paginated |
 | `GET /insights/forms/{form}/submissions/{submission_id}` | None (public) | `insights-api` | One submission |
+| `GET /insights/storage` | None (public) | `insights-api` | Raw submission files in S3: how many, in which folders |
 
 ## 1. Configuration
 
@@ -185,6 +186,32 @@ Only forms stored in DynamoDB are readable. `leader-self-assessment` is stored o
 
 One submission, same shape as an item above.
 
+### `GET /insights/storage`
+
+Summary of the raw submission files in S3 (every form, including `leader-self-assessment`): how many files there are and in which folders. It never returns file names, contents or the bucket name.
+
+```json
+{
+  "prefix": "submissions/",
+  "files": 3,
+  "bytes": 61234,
+  "last_modified": "2026-10-29T19:57:29-05:00",
+  "forms": [
+    { "form": "leader-self-assessment", "files": 1, "bytes": 18000, "last_modified": "2026-10-29T18:10:02-05:00" },
+    { "form": "participant-feedback", "files": 2, "bytes": 43234, "last_modified": "2026-10-29T19:57:29-05:00" }
+  ],
+  "folders": [
+    { "path": "submissions/leader-self-assessment/2026/10/", "form": "leader-self-assessment", "files": 1, "bytes": 18000, "last_modified": "2026-10-29T18:10:02-05:00" },
+    { "path": "submissions/participant-feedback/2026/10/", "form": "participant-feedback", "files": 2, "bytes": 43234, "last_modified": "2026-10-29T19:57:29-05:00" }
+  ]
+}
+```
+
+- Folders follow `submissions/<form>/<YYYY>/<MM>/` (month in Bogotá time) and are sorted by `path`. Only folders that contain files are listed.
+- `forms` and the top-level fields aggregate `folders`. A file directly under `submissions/` (none expected) has `form: null`.
+- `last_modified` is when the file was last written to S3, in Bogotá time; `null` when there are no files.
+- S3 keeps one file per submission, so `files` per form can differ from `submission_count` in `GET /insights/forms` (DynamoDB), e.g. for S3-only forms.
+
 ## 4. Data model
 
 **Submission**
@@ -232,7 +259,7 @@ When authentication is turned on, `401` (missing or invalid token) and `403` (us
 
 - **The insights endpoints are public**: anyone with the URL can read every submission, including free-text answers. This is a temporary decision ([../decisions.md](../decisions.md)); do not publish the URL, and turn authentication on ([../auth.md](../auth.md)) before sharing the frontend widely.
 - CORS only lets browsers on `local.api_allowed_origins` call the API. It does not stop direct requests (curl, scripts).
-- The Lambda can only `Query` and `GetItem` the DynamoDB partitions of readable forms (IAM `dynamodb:LeadingKeys`). It cannot write, scan, or read S3.
+- The Lambda can only `Query` and `GetItem` the DynamoDB partitions of readable forms (IAM `dynamodb:LeadingKeys`), and list file names under `submissions/` in S3 (`s3:ListBucket` with an `s3:prefix` condition). It cannot write, scan, or read any S3 file.
 - Throttling: 10 requests/second steady, burst 20, shared by the whole API (including the YouForm webhook).
 - Logs carry route, status and error code only; never answers.
 - Responses contain personal answers. Do not store them in `localStorage`, analytics tools or error trackers.

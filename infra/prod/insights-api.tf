@@ -21,6 +21,7 @@ locals {
       "GET /insights/forms"                                    = { integration = "insights_api", authorized = local.insights_require_auth }
       "GET /insights/forms/{form}/submissions"                 = { integration = "insights_api", authorized = local.insights_require_auth }
       "GET /insights/forms/{form}/submissions/{submission_id}" = { integration = "insights_api", authorized = local.insights_require_auth }
+      "GET /insights/storage"                                  = { integration = "insights_api", authorized = local.insights_require_auth }
     }
   }
 }
@@ -41,8 +42,9 @@ module "insights_api" {
   # Without READER_GROUP the function does not check groups (public mode).
   environment = merge(
     {
-      FORMS_CONFIG    = jsonencode(local.insights_forms)
-      RESPONSES_TABLE = aws_dynamodb_table.youform_responses.name
+      FORMS_CONFIG       = jsonencode(local.insights_forms)
+      RESPONSES_TABLE    = aws_dynamodb_table.youform_responses.name
+      SUBMISSIONS_BUCKET = module.youform_submissions_bucket.bucket_name
     },
     local.insights_require_auth ? { READER_GROUP = local.insights_reader_group } : {},
   )
@@ -60,6 +62,16 @@ module "insights_api" {
           "ForAllValues:StringEquals" = {
             "dynamodb:LeadingKeys" = [for id in values(local.insights_forms) : "FORM#${id}"]
           }
+        }
+      },
+      {
+        # Storage summary: list keys under submissions/ only. No s3:GetObject, so contents stay unreadable.
+        Sid      = "ListSubmissionFiles"
+        Effect   = "Allow"
+        Action   = "s3:ListBucket"
+        Resource = module.youform_submissions_bucket.bucket_arn
+        Condition = {
+          StringLike = { "s3:prefix" = ["submissions/*"] }
         }
       }
     ]

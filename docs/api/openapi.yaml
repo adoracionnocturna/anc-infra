@@ -109,6 +109,50 @@ paths:
           $ref: "#/components/responses/TooManyRequests"
         "500":
           $ref: "#/components/responses/InternalError"
+  /insights/storage:
+    get:
+      tags: [insights]
+      operationId: getStorage
+      summary: Summarize raw submission files in S3
+      description: |
+        How many raw submission files exist and in which folders (`submissions/<form>/<YYYY>/<MM>/`), for
+        every form including S3-only ones. Never returns file names, contents or the bucket name.
+      responses:
+        "200":
+          description: Files per form and per folder.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Storage"
+              example:
+                prefix: submissions/
+                files: 3
+                bytes: 61234
+                last_modified: "2026-10-29T19:57:29-05:00"
+                forms:
+                  - form: leader-self-assessment
+                    files: 1
+                    bytes: 18000
+                    last_modified: "2026-10-29T18:10:02-05:00"
+                  - form: participant-feedback
+                    files: 2
+                    bytes: 43234
+                    last_modified: "2026-10-29T19:57:29-05:00"
+                folders:
+                  - path: submissions/leader-self-assessment/2026/10/
+                    form: leader-self-assessment
+                    files: 1
+                    bytes: 18000
+                    last_modified: "2026-10-29T18:10:02-05:00"
+                  - path: submissions/participant-feedback/2026/10/
+                    form: participant-feedback
+                    files: 2
+                    bytes: 43234
+                    last_modified: "2026-10-29T19:57:29-05:00"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   securitySchemes:
     cognitoAccessToken:
@@ -215,6 +259,53 @@ components:
             - type: array
               items:
                 type: string
+    StorageTotals:
+      type: object
+      required: [files, bytes, last_modified]
+      properties:
+        files:
+          type: integer
+          minimum: 0
+        bytes:
+          type: integer
+          minimum: 0
+        last_modified:
+          $ref: "#/components/schemas/Timestamp"
+    Storage:
+      description: Totals of every file under `prefix`, plus breakdowns per form and per folder.
+      allOf:
+        - $ref: "#/components/schemas/StorageTotals"
+        - type: object
+          required: [prefix, forms, folders]
+          properties:
+            prefix:
+              type: string
+              example: submissions/
+            forms:
+              type: array
+              items:
+                allOf:
+                  - $ref: "#/components/schemas/StorageTotals"
+                  - type: object
+                    required: [form]
+                    properties:
+                      form:
+                        type: [string, "null"]
+                        description: Form slug; `null` for files directly under `prefix`.
+            folders:
+              type: array
+              description: Folders that contain files, sorted by `path`.
+              items:
+                allOf:
+                  - $ref: "#/components/schemas/StorageTotals"
+                  - type: object
+                    required: [path, form]
+                    properties:
+                      path:
+                        type: string
+                        example: submissions/participant-feedback/2026/10/
+                      form:
+                        type: [string, "null"]
     Error:
       type: object
       required: [error, message]
