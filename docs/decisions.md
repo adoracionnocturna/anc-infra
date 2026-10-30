@@ -4,6 +4,14 @@ Short, dated records of decisions that shape this repository. Newest first. Each
 
 ---
 
+## 2026-10-30 — Admin-only CLI sign-in for testing
+
+**Context.** Testing the insights API needs real Cognito tokens, and the AWS CLI cannot perform SRP.
+
+**Decision.** The `anc-prod-insights-web` client also allows `ADMIN_USER_PASSWORD_AUTH`. It requires AWS credentials with `cognito-idp:AdminInitiateAuth`, so it adds no browser-facing sign-in path. Allowed users stay in Cognito only (pool + `insights-readers` group); email addresses are never stored in the repository or in GitHub variables or secrets.
+
+**Consequences.** Administrators can test end to end from the CLI ([api/README.md](api/README.md#testing-from-the-command-line)).
+
 ## 2026-10-30 — Insights read API: shared HTTP API, Cognito users, group-based access
 
 **Context.** A browser frontend (Vite + React) will read the participant feedback submissions to build insight charts. The data contains personal answers, and anything shipped to a browser is public, so API keys or static tokens are not acceptable.

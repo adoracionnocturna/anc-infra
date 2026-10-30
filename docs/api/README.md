@@ -63,6 +63,19 @@ aws cognito-idp list-users-in-group --user-pool-id <pool_id> --group-name insigh
 
 An access token that was already issued stays valid until it expires (at most 1 hour), even after the user is removed or signed out.
 
+### Testing from the command line
+
+Browsers sign in with SRP, which the AWS CLI cannot do. For tests, administrators use `ADMIN_USER_PASSWORD_AUTH`, which only works with AWS credentials allowed to call `cognito-idp:AdminInitiateAuth`, so it is not usable from a browser. The tokens are real and go through the same JWT authorizer as the frontend's.
+
+```bash
+# <client_id> is VITE_COGNITO_CLIENT_ID; <api_url> is VITE_API_URL.
+aws cognito-idp admin-initiate-auth --user-pool-id <pool_id> --client-id <client_id> --auth-flow ADMIN_USER_PASSWORD_AUTH --auth-parameters USERNAME=person@example.org,PASSWORD='<password>'
+# First sign-in returns ChallengeName NEW_PASSWORD_REQUIRED: set the permanent password.
+aws cognito-idp admin-respond-to-auth-challenge --user-pool-id <pool_id> --client-id <client_id> --challenge-name NEW_PASSWORD_REQUIRED --session '<Session>' --challenge-responses USERNAME='<USER_ID_FOR_SRP>',NEW_PASSWORD='<new password>'
+# Use AuthenticationResult.AccessToken:
+curl -H "Authorization: Bearer <access_token>" <api_url>/insights/forms
+```
+
 ## 3. Connecting a Vite + React frontend
 
 Install [AWS Amplify](https://docs.amplify.aws/react/build-a-backend/auth/connect-your-frontend/) (only its Auth category is used; no Amplify backend is needed):

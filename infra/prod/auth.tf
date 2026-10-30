@@ -32,12 +32,14 @@ resource "aws_cognito_user_pool" "users" {
 }
 
 # Browser app client (public: no client secret). Sign-in with SRP; refresh tokens can be revoked.
+# ADMIN_USER_PASSWORD_AUTH only works with AWS admin credentials: it lets administrators get real
+# tokens from the CLI for testing, and is not usable from a browser.
 resource "aws_cognito_user_pool_client" "insights_web" {
   name         = "${local.name_prefix}-insights-web"
   user_pool_id = aws_cognito_user_pool.users.id
 
   generate_secret               = false
-  explicit_auth_flows           = ["ALLOW_USER_SRP_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"]
+  explicit_auth_flows           = ["ALLOW_USER_SRP_AUTH", "ALLOW_REFRESH_TOKEN_AUTH", "ALLOW_ADMIN_USER_PASSWORD_AUTH"]
   prevent_user_existence_errors = "ENABLED"
   enable_token_revocation       = true
 

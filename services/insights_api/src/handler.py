@@ -64,7 +64,7 @@ def _response(status_code: int, body: dict[str, Any]) -> dict[str, Any]:
     return {
         "statusCode": status_code,
         # Responses carry personal data: never cache them in browsers or proxies.
-        "headers": {"Content-Type": "application/json", "Cache-Control": "no-store"},
+        "headers": {"Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store"},
         "body": json.dumps(body, default=_json_default, ensure_ascii=False),
     }
 
