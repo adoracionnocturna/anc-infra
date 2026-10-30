@@ -1,7 +1,8 @@
-"""Insights API: authenticated, read-only access to normalized YouForm submissions in DynamoDB.
+"""Insights API: read-only access to normalized YouForm submissions in DynamoDB.
 
-API Gateway validates the Cognito access token (JWT authorizer); this function additionally
-requires membership in the reader group. Only forms stored in DynamoDB are readable.
+With READER_GROUP set, API Gateway validates the Cognito access token (JWT authorizer) and this
+function additionally requires membership in that group. Without it, the API is public.
+Only forms stored in DynamoDB are readable.
 
 Answers are never logged; logs only carry route, form slug and outcome.
 """
@@ -203,7 +204,9 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     try:
         if action is None:
             raise ApiError(404, "not_found", "Unknown route.")
-        if os.environ["READER_GROUP"] not in _groups(event):
+        # No READER_GROUP means public mode (auth disabled in Terraform, see docs/auth.md).
+        reader_group = os.environ.get("READER_GROUP")
+        if reader_group and reader_group not in _groups(event):
             raise ApiError(403, "forbidden", "User is not allowed to read insights.")
         body = action(event)
     except ApiError as error:

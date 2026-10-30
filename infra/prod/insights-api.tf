@@ -1,8 +1,11 @@
-# insights-api: authenticated, read-only access to YouForm submissions stored in DynamoDB,
-# for the insights frontend. Routes live on the shared API (api.tf) behind the Cognito JWT authorizer.
-# Docs: docs/services/README.md#insights-api, docs/api/README.md
+# insights-api: read-only access to YouForm submissions stored in DynamoDB, for the insights
+# frontend. Routes live on the shared API (api.tf).
+# Docs: docs/services/README.md#insights-api, docs/api/README.md, docs/auth.md
 
 locals {
+  # Authentication switch. false = public routes: no token and no group check (temporary, see
+  # docs/decisions.md). true = Cognito access token + membership in insights_reader_group.
+  insights_require_auth = false
   insights_reader_group = "insights-readers"
 
   # Readable forms: only those normalized into DynamoDB, as {slug: form_id}.
@@ -15,9 +18,9 @@ locals {
       insights_api = { function_name = module.insights_api.function_name, invoke_arn = module.insights_api.invoke_arn }
     }
     routes = {
-      "GET /insights/forms"                                    = { integration = "insights_api", authorized = true }
-      "GET /insights/forms/{form}/submissions"                 = { integration = "insights_api", authorized = true }
-      "GET /insights/forms/{form}/submissions/{submission_id}" = { integration = "insights_api", authorized = true }
+      "GET /insights/forms"                                    = { integration = "insights_api", authorized = local.insights_require_auth }
+      "GET /insights/forms/{form}/submissions"                 = { integration = "insights_api", authorized = local.insights_require_auth }
+      "GET /insights/forms/{form}/submissions/{submission_id}" = { integration = "insights_api", authorized = local.insights_require_auth }
     }
   }
 }
@@ -35,11 +38,14 @@ module "insights_api" {
   source_dir    = "${local.services_dir}/insights_api/src"
   tags          = local.insights_tags
 
-  environment = {
-    FORMS_CONFIG    = jsonencode(local.insights_forms)
-    RESPONSES_TABLE = aws_dynamodb_table.youform_responses.name
-    READER_GROUP    = local.insights_reader_group
-  }
+  # Without READER_GROUP the function does not check groups (public mode).
+  environment = merge(
+    {
+      FORMS_CONFIG    = jsonencode(local.insights_forms)
+      RESPONSES_TABLE = aws_dynamodb_table.youform_responses.name
+    },
+    local.insights_require_auth ? { READER_GROUP = local.insights_reader_group } : {},
+  )
 
   policy_json = jsonencode({
     Version = "2012-10-17"

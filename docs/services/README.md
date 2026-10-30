@@ -12,7 +12,7 @@ Shared by every service (not services themselves):
 | Component | Terraform | Purpose |
 | --- | --- | --- |
 | HTTP API `anc-prod-api` | `infra/prod/api.tf` | Single API Gateway; each service contributes its routes. Client guide: [../api/README.md](../api/README.md) |
-| Cognito user pool `anc-prod-users` | `infra/prod/auth.tf` | Users of ANC web apps; access per app through groups |
+| Cognito user pool `anc-prod-users` | `infra/prod/auth.tf` | Users of ANC web apps; access per app through groups. Not enforced yet: [../auth.md](../auth.md) |
 
 ---
 
@@ -79,11 +79,11 @@ Add the secret before creating the webhook: YouForm disables a webhook whose tes
 
 ## insights-api
 
-**Status:** active.
+**Status:** active, **public** (authentication temporarily disabled).
 
-**Purpose.** Authenticated, read-only access to the YouForm submissions stored in DynamoDB, for the insights frontend (charts). Full client guide and contract: [../api/README.md](../api/README.md), [../api/openapi.yaml](../api/openapi.yaml).
+**Purpose.** Read-only access to the YouForm submissions stored in DynamoDB, for the insights frontend (charts). Full client guide and contract: [../api/README.md](../api/README.md), [../api/openapi.yaml](../api/openapi.yaml).
 
-**Entry point.** Browser (Vite + React) → shared HTTP API `anc-prod-api` with the Cognito JWT authorizer → Lambda `anc-prod-insights-api`.
+**Entry point.** Browser (Vite + React) → shared HTTP API `anc-prod-api` → Lambda `anc-prod-insights-api`.
 
 | Route | Returns |
 | --- | --- |
@@ -93,11 +93,12 @@ Add the secret before creating the webhook: YouForm disables a webhook whose tes
 
 **Features (forms).** Readable forms are derived from `local.youform_forms`: every form with `store_in_dynamodb = true`, addressed by its slug. Forms stored only in S3 (`leader-self-assessment`) are never readable. A new DynamoDB form becomes readable without changes here.
 
-**Access control.**
+**Access control.** Switch `local.insights_require_auth` in `infra/prod/insights-api.tf`, currently `false`: anyone with the URL can read. With `true` (see [../auth.md](../auth.md)):
 
 1. API Gateway validates the Cognito access token (signature, issuer, expiry, app client `anc-prod-insights-web`); invalid tokens get `401` before the Lambda runs.
-2. The Lambda requires the `cognito:groups` claim to contain `insights-readers` (`403` otherwise).
-3. IAM: the Lambda role can only `dynamodb:Query` and `dynamodb:GetItem` the partitions of readable forms (`dynamodb:LeadingKeys`). No writes, scans or S3 access.
+2. The Lambda requires the `cognito:groups` claim to contain `insights-readers` (`403` otherwise). The group is passed as `READER_GROUP`; without it the Lambda skips the check.
+
+Always on: IAM lets the Lambda role only `dynamodb:Query` and `dynamodb:GetItem` the partitions of readable forms (`dynamodb:LeadingKeys`). No writes, scans or S3 access.
 
 **Response shaping.** Internal keys (`pk`, `sk`, `form_id`, `raw_s3_key`) are not returned. Answers are a list sorted by position; numeric types (`nps`, `opinion_scale`, `rating`, `number`) become numbers and `checkbox` answers become lists. Responses are `Cache-Control: no-store`.
 
@@ -106,14 +107,14 @@ Add the secret before creating the webhook: YouForm disables a webhook whose tes
 | Resource | Name |
 | --- | --- |
 | Lambda + role + log group (30 days) | `anc-prod-insights-api` |
-| Routes on the shared HTTP API (JWT authorizer `anc-prod-api-jwt`) | `GET /insights/...` on `anc-prod-api` |
-| Cognito app client (public, SRP sign-in) | `anc-prod-insights-web` in `anc-prod-users` |
-| Cognito group | `insights-readers` |
+| Routes on the shared HTTP API (JWT authorizer `anc-prod-api-jwt` when auth is on) | `GET /insights/...` on `anc-prod-api` |
+| Cognito app client (public, SRP sign-in; unused while auth is off) | `anc-prod-insights-web` in `anc-prod-users` |
+| Cognito group (unused while auth is off) | `insights-readers` |
 
 **Operations.**
 
 - Logs: `/aws/lambda/anc-prod-insights-api`, with route, status and error code only.
-- Users: created by an administrator, no emails; see [../api/README.md#2-users-and-access](../api/README.md#2-users-and-access).
+- Users (when auth is on): created by an administrator, no emails; see [../auth.md](../auth.md#users).
 - Frontend configuration: `terraform output -json insights_web_config` (sensitive output).
 - New frontend origin: add it to `local.api_allowed_origins` in `infra/prod/api.tf`.
 

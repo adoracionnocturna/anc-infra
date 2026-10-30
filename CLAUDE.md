@@ -8,6 +8,7 @@ Read before changing anything:
 - [docs/decisions.md](docs/decisions.md): why things are the way they are.
 - [docs/services/README.md](docs/services/README.md): what is deployed.
 - [docs/api/README.md](docs/api/README.md) and [docs/api/openapi.yaml](docs/api/openapi.yaml): API contract for clients; update them with every route change.
+- [docs/auth.md](docs/auth.md): Cognito setup (deployed, not enforced yet) and how to turn it on.
 
 Key rules:
 

@@ -193,6 +193,13 @@ class HandlerTest(unittest.TestCase):
             self.assertEqual(body["error"], "forbidden")
         self.assertEqual(self.table.queries, [])
 
+    def test_public_mode_skips_group_check(self):
+        del os.environ["READER_GROUP"]
+        evt = event("GET /insights/forms", groups=None)
+        evt["requestContext"] = {}
+        status, _, _ = self.invoke(evt)
+        self.assertEqual(status, 200)
+
     def test_groups_claim_as_list_is_accepted(self):
         status, _, _ = self.invoke(event("GET /insights/forms", groups=["other", READER_GROUP]))
         self.assertEqual(status, 200)

@@ -5,9 +5,10 @@ info:
   description: |
     Read-only access to YouForm submissions stored by ANC, for insights dashboards.
 
-    Authentication: Cognito user pool access token (`Authorization: Bearer <token>`) of a user in the
-    `insights-readers` group. See docs/api/README.md for configuration values, user management and a
-    Vite + React client example.
+    Authentication: currently disabled, the endpoints are public. When it is turned on (docs/auth.md),
+    requests need a Cognito access token (`Authorization: Bearer <token>`, scheme `cognitoAccessToken`)
+    of a user in the `insights-readers` group, and `401`/`403` responses are added.
+    See docs/api/README.md for configuration and a Vite + React client example.
 
     Timestamps are ISO 8601 in Bogotá time (`-05:00`). Responses are never cacheable (`Cache-Control: no-store`).
 servers:
@@ -16,8 +17,8 @@ servers:
     variables:
       apiId:
         default: your-api-id
-security:
-  - cognitoAccessToken: []
+# Public for now. With authentication on: `security: [{ cognitoAccessToken: [] }]`.
+security: []
 tags:
   - name: insights
     description: Form submissions for dashboards.
@@ -39,10 +40,6 @@ paths:
                 items:
                   - form: participant-feedback
                     submission_count: 42
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
         "429":
           $ref: "#/components/responses/TooManyRequests"
         "500":
@@ -79,10 +76,6 @@ paths:
                 $ref: "#/components/schemas/SubmissionPage"
         "400":
           $ref: "#/components/responses/InvalidParameter"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "429":
@@ -110,10 +103,6 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Submission"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "429":
@@ -232,7 +221,7 @@ components:
       properties:
         error:
           type: string
-          enum: [invalid_parameter, forbidden, not_found, internal_error]
+          enum: [invalid_parameter, not_found, internal_error]
         message:
           type: string
     GatewayError:
@@ -251,23 +240,6 @@ components:
           example:
             error: invalid_parameter
             message: limit must be an integer between 1 and 100.
-    Unauthorized:
-      description: Missing, invalid or expired access token.
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/GatewayError"
-          example:
-            message: Unauthorized
-    Forbidden:
-      description: The user is not in the `insights-readers` group.
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
-          example:
-            error: forbidden
-            message: User is not allowed to read insights.
     NotFound:
       description: Unknown form, submission or route.
       content:

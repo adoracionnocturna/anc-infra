@@ -17,6 +17,7 @@ The AWS account is shared with other projects. Every ANC resource uses the `anc-
 - [docs/decisions.md](docs/decisions.md): decision log.
 - [docs/services/README.md](docs/services/README.md): service catalog.
 - [docs/api/README.md](docs/api/README.md): how to connect a client (e.g. the insights frontend) to the API; contract in [docs/api/openapi.yaml](docs/api/openapi.yaml).
+- [docs/auth.md](docs/auth.md): authentication with Cognito (deployed, not enforced yet).
 
 ## Layout
 

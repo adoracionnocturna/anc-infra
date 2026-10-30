@@ -4,6 +4,14 @@ Short, dated records of decisions that shape this repository. Newest first. Each
 
 ---
 
+## 2026-10-30 — Insights API temporarily public
+
+**Context.** Authentication is not critical yet, and the frontend needs to read the data now without a sign-in flow. Supersedes the enforcement part of "Insights read API" below.
+
+**Decision.** The insights routes are public: `local.insights_require_auth = false` removes the JWT authorizer from the routes and the group check from the Lambda (no `READER_GROUP`). Cognito (pool, app client, group, authorizer) stays deployed and documented in [auth.md](auth.md), so turning authentication back on is a one-line change plus users. IAM, CORS, throttling and the S3-only exclusion of leader self-assessments stay as they are.
+
+**Consequences.** Anyone with the API URL can read every participant feedback submission, including free-text answers; CORS does not prevent direct requests. The URL is kept out of the repository and CI logs, but a public frontend would reveal it. Turn authentication on before the frontend is shared beyond the team.
+
 ## 2026-10-30 — Admin-only CLI sign-in for testing
 
 **Context.** Testing the insights API needs real Cognito tokens, and the AWS CLI cannot perform SRP.
